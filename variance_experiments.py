@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import cirq
+from joblib import Parallel, delayed
 import numpy as np
 from mps_gradient import (
     energy, 
@@ -15,7 +16,7 @@ from xmps.fMPS import fMPS
 from xmps.Hamiltonians import Hamiltonian
 from xmps.fTDVP import Trajectory
 from copy import deepcopy
-
+import sys
 
 def test_a_bunch_of_stuff():
     # define tfim Hamiltonian and chain length
@@ -257,6 +258,60 @@ def optimized_variance_data(mps, ham, L, block_num, param_index, eps=1e-5, reps 
     return res
 
 
+def parallel_random_variance_data(ham, L, block_num = 1, param_index = 5, eps = 1e-5, reps = 100 ):
+
+    def random_grad():
+
+        # generate random params
+        p_forward = generate_params(L)
+
+        # use the same params to cancel out
+        p_reverse = generate_params(L)
+
+        circuit_p, circuit_m = energy_grad_circuit_f_diff(
+            mps = None,
+            L = L,
+            p_forward = p_forward,
+            p_reverse = p_reverse,
+            block_num = block_num, param_index = param_index,
+            use_mps = False,
+            eps = eps
+        )
+
+        return energy_grad_f_diff(ham, circuit_p, circuit_m, eps)
+
+    res = Parallel(n_jobs=36)(delayed(random_grad)() for _ in tqdm(range(reps)))
+
+    return res
+
+
+def parallel_optimal_variance_data(mps, ham, L, block_num = 1, param_index = 5, eps = 1e-5, reps = 100 ):
+
+    def opt_grad():
+
+        # generate random params
+        p_forward = generate_params(L)
+
+        # use the same params to cancel out
+        p_reverse = deepcopy(p_forward)
+
+        circuit_p, circuit_m = energy_grad_circuit_f_diff(
+            mps = mps,
+            L = L,
+            p_forward = p_forward,
+            p_reverse = p_reverse,
+            block_num = block_num, param_index = param_index,
+            use_mps = True,
+            eps = eps
+        )
+
+        return energy_grad_f_diff(ham, circuit_p, circuit_m, eps)
+
+    res = Parallel(n_jobs=36)(delayed(opt_grad)() for _ in range(reps))
+
+    return res
+
+
 def variance_exp():
     # define tfim Hamiltonian and chain length
     tfim = Hamiltonian({'ZZ':1,'X':1,'Z':0.5})
@@ -289,10 +344,40 @@ def variance_exp():
     plt.show()
 
 
-if __name__ == '__main__':
+def parallel_variance_exp():
+    # define tfim Hamiltonian and chain length
+    tfim = Hamiltonian({'ZZ':1,'X':1,'Z':0.5})
+    L = 3
 
+    # build the identity circuit
+    # to do this we define the 'forward' params which define the odd layers of XPow and CZ gates
+    # If we want the identity we copy these to the backward params
+    # Otherwise we define new parameters
+
+    # mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
+
+    results = []
     Ls = [4,6,8,10,12]
-    
+    for L in Ls:
+        print(f'L = {L}')
+        # mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
+
+        data = parallel_random_variance_data(
+            ham = tfim, 
+            L = L
+        )
+
+        var = np.var(data)
+        results.append(var)
+
+    # np.save('./randomized_var.npy', results)
+    # plt.plot(Ls, results)
+    # plt.show()
+
+
+
+def plotting():
+    Ls = [4,6,8,10,12]
     plt.rcParams.update({
         "text.usetex": True,
         "font.family": "sans-serif",
@@ -323,4 +408,57 @@ if __name__ == '__main__':
     plt.show()
 
 
+if __name__ == '__main__':
+    # parallel_variance_exp()
+    Ls = [4,6,8,10,12,14,16,18]
+    
+    exp = sys.argv[1]
+    
+    assert exp in ['mps', 'ran']
+
+    # define tfim Hamiltonian and chain length
+    tfim = Hamiltonian({'ZZ':1,'X':1,'Z':0.5})
+    L = 3
+
+    # build the identity circuit
+    # to do this we define the 'forward' params which define the odd layers of XPow and CZ gates
+    # If we want the identity we copy these to the backward params
+    # Otherwise we define new parameters
+
+    if exp == 'mps':
+        mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
+
+        results = []
+        Ls = [4,6,8,10,12,14,16,18,20]
+        for L in Ls:
+            print(f'L = {L}')
+            mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
+
+            data = parallel_optimal_variance_data(
+                mps = mps,
+                ham = tfim,
+                L = L
+            )
+
+            var = np.var(data)
+            results.append(var)
+
+        np.save('/home/ucapjmd/code/mps_pretraining_reboot/optimized_var_myriad.npy', results)
+
+    if exp == 'ran':
+        results = []
+        Ls = [4,6,8,10,12,14,16,18,20]
+        for L in Ls:
+            print(f'L = {L}')
+            # mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
+
+            data = parallel_random_variance_data(
+                ham = tfim,
+                L = L
+            )
+
+            var = np.var(data)
+            results.append(var)
+
+        np.save('/home/ucapjmd/code/mps_pretraining_reboot/randomized_var_myriad.npy', results)
 
