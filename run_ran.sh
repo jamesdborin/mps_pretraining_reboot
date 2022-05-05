@@ -1,7 +1,5 @@
 #!/bin/bash -l
 
-# Batch script to run an OpenMP threaded job under SGE.
-
 # Request ten minutes of wallclock time (format hours:minutes:seconds).
 #$ -l h_rt=24:00:00
 
@@ -13,7 +11,7 @@
 #$ -l tmpfs=10G
 
 # Set the name of the job.
-#$ -N Multi-threaded Job
+#$ -N RAN
 
 # Request 16 cores.
 #$ -pe smp 36

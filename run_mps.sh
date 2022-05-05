@@ -1,7 +1,5 @@
 #!/bin/bash -l
 
-# Batch script to run an OpenMP threaded job under SGE.
-
 # Request ten minutes of wallclock time (format hours:minutes:seconds).
 #$ -l h_rt=24:00:00
 
@@ -13,7 +11,7 @@
 #$ -l tmpfs=10G
 
 # Set the name of the job.
-#$ -N Multi-threaded Job
+#$ -N MPS
 
 # Request 16 cores.
 #$ -pe smp 36
@@ -26,4 +24,4 @@
 module load python/3.8.0
 
 # 8. Run the application.
-python /home/ucapjmd/code/mps_pretraining_reboot/variance_experiments.py mps
+python ~/code/mps_pretraining_reboot/variance_experiments.py mps

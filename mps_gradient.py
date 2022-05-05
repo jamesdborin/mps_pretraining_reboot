@@ -265,6 +265,61 @@ def energy(ham, circuit):
     return E.real
 
 
+letter_to_cirq_ops = {
+    'X':cirq.ops.X,
+    'Z':cirq.ops.Z,
+    'I':cirq.ops.I
+}
+
+
+def to_pauli_string(qubits, ham_dict):
+    """Take a hamiltonian dictionary, liek those used as input to Hamiltonian class, and return a cirq pauli string.
+    
+    I.e. {'ZZ':1,'X':0.5} -> (1/L) * Z(0)*Z(1) + Z(1)*Z(2) + ... + X(0)/2 * X(1)/2 + ...  
+    """
+    L = len(qubits) 
+    pauli_strings = []
+    for i in range(L):
+        for strings in ham_dict.keys():
+
+            coeff = float(ham_dict[strings]) / L
+
+            if len(strings) == 2:
+                if i < (L-1):
+                    pauli_strings.append(
+                        coeff * cirq.PauliString(
+                            letter_to_cirq_ops[strings[0]].on(qubits[i]),
+                            letter_to_cirq_ops[strings[1]].on(qubits[i+1]),
+                    ))
+
+            else:
+                pauli_strings.append(
+                    coeff * cirq.PauliString(
+                        letter_to_cirq_ops[strings].on(qubits[i])
+                    )
+                )
+
+    return sum(pauli_strings)
+
+
+def energy_efficient(ham_dict, circuit):
+    """(more) efficient energy estimation using cirq pauli strings """
+    
+    sim = qsimcirq.QSimSimulator()
+    res = sim.simulate(circuit).final_state_vector
+    
+    L = len(circuit.all_qubits())
+    qs = cirq.GridQubit.rect(1,L)
+    
+    pauli_string = to_pauli_string(qs, ham_dict) 
+    qubit_mapping = {q:i for i,q in zip(range(L), qs)}
+
+    E = pauli_string.expectation_from_state_vector(res, qubit_mapping)
+
+    return E.real
+
+
+
 def generate_params(L):
     num_blocks_layer_1 =  L     // 2
     num_blocks_layer_2 = (L-1)  // 2
@@ -320,18 +375,12 @@ def energy_grad_f_diff(ham, plus_circuit, minus_circuit, eps = 1.5e-8):
     return grad
 
 
+def energy_grad_f_diff_efficient(ham_dict, plus_circuit, minus_circuit, eps = 1.5e-8):
 
-def calc_variance_of_grad(L, ham, block_num, param_index, use_mps = True, opt_mps = True, identity = True):
-    
-    if opt_mps and use_mps:
-        mps, _ = get_opt_mps(ham, L, T=0.4, steps = 80)
+    grad = (1/eps) * (
+        energy_efficient(ham_dict, plus_circuit) - \
+        energy_efficient(ham_dict, minus_circuit)
+        )
 
-    else:
-        mps = fMPS().random(L=L, d=2, D=2).left_canonicalise()
-
-    grads = [energy_grad(mps, ham, L, block_num, param_index, use_mps=use_mps, identity=identity) for _ in range(200)]
-
-    grad_var = np.var(grads)
-
-    return grad_var
+    return grad
 

@@ -10,7 +10,8 @@ from mps_gradient import (
     generate_params,
     full_ham,
     energy_grad_circuit_f_diff,
-    energy_grad_f_diff
+    energy_grad_f_diff,
+    energy_grad_f_diff_efficient
 )
 from xmps.fMPS import fMPS
 from xmps.Hamiltonians import Hamiltonian
@@ -312,6 +313,61 @@ def parallel_optimal_variance_data(mps, ham, L, block_num = 1, param_index = 5, 
     return res
 
 
+def parallel_efficient_random_variance_data(ham_dict, L, block_num = 1, param_index = 5, eps = 1e-5, reps = 100 ):
+
+    def random_grad():
+
+        # generate random params
+        p_forward = generate_params(L)
+
+        # use the same params to cancel out
+        p_reverse = generate_params(L)
+
+        circuit_p, circuit_m = energy_grad_circuit_f_diff(
+            mps = None,
+            L = L,
+            p_forward = p_forward,
+            p_reverse = p_reverse,
+            block_num = block_num, param_index = param_index,
+            use_mps = False,
+            eps = eps
+        )
+
+        return energy_grad_f_diff_efficient(ham_dict, circuit_p, circuit_m, eps)
+
+    res = Parallel(n_jobs=36)(delayed(random_grad)() for _ in tqdm(range(reps)))
+
+    return res
+
+
+def parallel_efficient_optimal_variance_data(mps, ham_dict, L, block_num = 1, param_index = 5, eps = 1e-5, reps = 100 ):
+
+    def opt_grad():
+
+        # generate random params
+        p_forward = generate_params(L)
+
+        # use the same params to cancel out
+        p_reverse = deepcopy(p_forward)
+
+        circuit_p, circuit_m = energy_grad_circuit_f_diff(
+            mps = mps,
+            L = L,
+            p_forward = p_forward,
+            p_reverse = p_reverse,
+            block_num = block_num, param_index = param_index,
+            use_mps = True,
+            eps = eps
+        )
+
+        return energy_grad_f_diff_efficient(ham_dict, circuit_p, circuit_m, eps)
+
+    res = Parallel(n_jobs=36)(delayed(opt_grad)() for _ in range(reps))
+
+    return res
+
+
+
 def variance_exp():
     # define tfim Hamiltonian and chain length
     tfim = Hamiltonian({'ZZ':1,'X':1,'Z':0.5})
@@ -410,13 +466,12 @@ def plotting():
 
 if __name__ == '__main__':
     # parallel_variance_exp()
-    Ls = [4,6,8,10,12,14,16,18]
-    
     exp = sys.argv[1]
     
     assert exp in ['mps', 'ran']
 
     # define tfim Hamiltonian and chain length
+    tfim_dict = {'ZZ':1,'X':1,'Z':0.5}
     tfim = Hamiltonian({'ZZ':1,'X':1,'Z':0.5})
     L = 3
 
@@ -429,21 +484,21 @@ if __name__ == '__main__':
         mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
 
         results = []
-        Ls = [4,6,8,10,12,14,16,18,20]
+        Ls = [4,6,8,10,12,14,16,18]
         for L in Ls:
             print(f'L = {L}')
             mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
 
-            data = parallel_optimal_variance_data(
+            data = parallel_efficient_optimal_variance_data(
                 mps = mps,
-                ham = tfim,
+                ham_dict = tfim_dict,
                 L = L
             )
 
             var = np.var(data)
             results.append(var)
 
-        np.save('/home/ucapjmd/code/mps_pretraining_reboot/optimized_var_myriad.npy', results)
+        np.save('/home/jamie/work/PreTrainingReboot/optimized_var_18.npy', results)
 
     if exp == 'ran':
         results = []
@@ -452,13 +507,12 @@ if __name__ == '__main__':
             print(f'L = {L}')
             # mps, _ = get_opt_mps(tfim, L, T=0.4, steps = 40)
 
-            data = parallel_random_variance_data(
-                ham = tfim,
+            data = parallel_efficient_random_variance_data(
+                ham_dict = tfim_dict,
                 L = L
             )
 
             var = np.var(data)
             results.append(var)
 
-        np.save('/home/ucapjmd/code/mps_pretraining_reboot/randomized_var_myriad.npy', results)
-
+        np.save('/home/jamie/work/PreTrainingReboot/ran_var_18.npy', results)
